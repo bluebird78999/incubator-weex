@@ -303,7 +303,7 @@
         @try {
             [self performSelector:@selector(scrollViewDidEndScrollingAnimation:) withObject:nil afterDelay:0.3];
         } @catch (NSException *exception) {
-            WXLogError(@"WXTransform exception:%@", [exception reason]);
+            WXLogError(@"scrollViewDidEndScrollingAnimation exception:%@", [exception reason]);
         }
     }
 }
