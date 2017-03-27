@@ -95,6 +95,10 @@
     if (self.delegate && [self.delegate respondsToSelector:@selector(sliderView:didScrollToItemAtIndex:)]) {
         [self.delegate sliderView:self didScrollToItemAtIndex:_currentIndex];
     }
+    // is iOS 8.x ,send a scrollstop event after sending a slider change event
+    if (self.delegate && [self.delegate respondsToSelector:@selector(sliderView:scrollViewDidStopScroll:)] && [self isSystermVersion8]) {
+        [self.delegate sliderView:self scrollViewDidStopScroll:self.scrollView];
+    }
 }
 
 - (void)layoutSubviews
@@ -281,6 +285,17 @@
     }
 }
 
+- (BOOL)isSystermVersion8
+{
+    NSArray *ver = [[UIDevice currentDevice].systemVersion componentsSeparatedByString:@"."];
+    if ([[ver objectAtIndex:0] intValue] >= 9 || [[ver objectAtIndex:0] intValue] <= 7)
+    {
+        return NO;
+    }else{
+        return YES;
+    }
+}
+
 #pragma mark ScrollView Delegate
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView
@@ -297,9 +312,15 @@
     if (self.delegate && [self.delegate respondsToSelector:@selector(sliderView:sliderViewDidScroll:)]) {
         [self.delegate sliderView:self sliderViewDidScroll:self.scrollView];
     }
-    //[NSObject cancelPreviousPerformRequestsWithTarget:self];
-    //ensure that the end of scroll is fired.
-    //[self performSelector:@selector(scrollViewDidEndScrollingAnimation:) withObject:nil afterDelay:0.3];
+    
+    // is not iOS 8
+    if (![self isSystermVersion8]) {
+        [NSObject cancelPreviousPerformRequestsWithTarget:self];
+        //ensure that the end of scroll is fired.
+        if ([self respondsToSelector:@selector(scrollViewDidEndScrollingAnimation:)]) {
+            [self performSelector:@selector(scrollViewDidEndScrollingAnimation:) withObject:nil afterDelay:0.3];
+        }
+    }
 }
 
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView
@@ -359,6 +380,9 @@
     if (self = [super initWithRef:ref type:type styles:styles attributes:attributes events:events weexInstance:weexInstance]) {
         _sliderChangeEvent = NO;
         _sliderScrollEvent = NO;
+        _sliderScrollStartEvent = NO;
+        _sliderScrollEndEvent = NO;
+        _sliderStartEventFired = NO;
         _interval = 3000;
         _childrenView = [NSMutableArray new];
         _lastOffsetXRatio = 0;
@@ -603,6 +627,9 @@
 
 - (void)sliderView:(WXSliderView *)sliderView sliderViewDidScroll:(UIScrollView *)scrollView
 {
+    if (!_sliderStartEventFired) {
+        [self sliderView:sliderView scrollViewDidStartScroll:scrollView];
+    }
     if (_sliderScrollEvent) {
         CGFloat width = scrollView.frame.size.width;
         CGFloat XDeviation = scrollView.frame.origin.x - (scrollView.contentOffset.x - width);
@@ -610,10 +637,8 @@
         if (fabs(offsetXRatio - _lastOffsetXRatio) >= _offsetXAccuracy) {
             _lastOffsetXRatio = offsetXRatio;
             [self fireEvent:@"scroll" params:@{@"offsetXRatio":[NSNumber numberWithFloat:offsetXRatio]} domChanges:nil];
+            NSLog(@"event scroll");
         }
-    }
-    if (!_sliderStartEventFired) {
-        [self sliderView:sliderView scrollViewDidStartScroll:scrollView];
     }
 }
 
@@ -622,6 +647,7 @@
     self.currentIndex = index;
     if (_sliderChangeEvent) {
         [self fireEvent:@"change" params:@{@"index":@(index)} domChanges:@{@"attrs": @{@"index": @(index)}}];
+        NSLog(@"event change");
     }
 }
 
@@ -629,6 +655,7 @@
 {
     if (_sliderScrollStartEvent) {
         [self fireEvent:@"scrollstart" params:nil domChanges:nil];
+        NSLog(@"event scrollstart");
     }
     _sliderStartEventFired = YES;
 }
@@ -637,6 +664,7 @@
 {
     if (_sliderScrollEndEvent) {
         [self fireEvent:@"scrollend" params:nil domChanges:nil];
+        NSLog(@"event scrollend");
     }
     _sliderStartEventFired = NO;
 }
