@@ -73,7 +73,7 @@
     if (_scrollView) {
         _scrollView.delegate = nil;
     }
-    //[NSObject cancelPreviousPerformRequestsWithTarget:self];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self];
 }
 
 - (void)setIndicator:(WXIndicatorView *)indicator
