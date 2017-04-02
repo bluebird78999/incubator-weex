@@ -6,54 +6,59 @@
  * For the full copyright and license information,please view the LICENSE file in the root directory of this source tree.
  */
 
-#import "WXSliderComponent.h"
+#import "WXRecycleSliderComponent.h"
 #import "WXIndicatorComponent.h"
 #import "WXComponent_internal.h"
 #import "NSTimer+Weex.h"
 #import "WXSDKManager.h"
 #import "WXUtility.h"
 
-@class WXSliderView;
+typedef NS_ENUM(NSInteger, Direction) {
+    DirectionNone = 1 << 0,
+    DirectionLeft = 1 << 1,
+    DirectionRight = 1 << 2
+};
+
+@class WXRecycleSliderView;
 @class WXIndicatorView;
 
-@protocol WXSliderViewDelegate <UIScrollViewDelegate>
+@protocol WXRecycleSliderViewDelegate <UIScrollViewDelegate>
 
-- (void)sliderView:(WXSliderView *)sliderView sliderViewDidScroll:(UIScrollView *)scrollView;
-- (void)sliderView:(WXSliderView *)sliderView didScrollToItemAtIndex:(NSInteger)index;
-- (void)sliderView:(WXSliderView *)sliderView scrollViewDidStartScroll:(UIScrollView *)scrollView;
-- (void)sliderView:(WXSliderView *)sliderView scrollViewDidStopScroll:(UIScrollView *)scrollView;
+- (void)recycleSliderView:(WXRecycleSliderView *)recycleSliderView didScroll:(UIScrollView *)scrollView;
+- (void)recycleSliderView:(WXRecycleSliderView *)recycleSliderView didScrollToItemAtIndex:(NSInteger)index;
+- (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView;
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate;
 
 @end
 
-@interface WXSliderView : UIView <UIScrollViewDelegate>
+@interface WXRecycleSliderView : UIView <UIScrollViewDelegate>
 
 @property (nonatomic, strong) WXIndicatorView *indicator;
-@property (nonatomic, weak) id<WXSliderViewDelegate> delegate;
+@property (nonatomic, weak) id<WXRecycleSliderViewDelegate> delegate;
 
 @property (nonatomic, strong) UIScrollView *scrollView;
 @property (nonatomic, strong) NSMutableArray *itemViews;
+@property (nonatomic, assign) Direction direction;
 @property (nonatomic, assign) NSInteger currentIndex;
-@property (nonatomic, assign) BOOL isStartScroll;
+@property (nonatomic, assign) NSInteger nextIndex;
+@property (nonatomic, assign) CGRect currentItemFrame;
+@property (nonatomic, assign) CGRect nextItemFrame;
 
-- (UIScrollView *)scrollView;
 - (void)insertItemView:(UIView *)view atIndex:(NSInteger)index;
 - (void)removeItemView:(UIView *)view;
-- (void)scroll2ItemView:(NSInteger)index animated:(BOOL)animated;
-- (void)layoutItemViews;
-- (void)loadData;
 
 @end
 
-@implementation WXSliderView
+@implementation WXRecycleSliderView
 
 - (id)initWithFrame:(CGRect)frame
 {
     self = [super initWithFrame:frame];
     if (self) {
-        UIView *tempBackGround = [[UIView alloc] init];
-        tempBackGround.backgroundColor = [UIColor clearColor];
-        [self addSubview:tempBackGround];
-        
+        _currentIndex = 0;
+        _currentItemFrame = CGRectMake(self.width, 0, self.width, self.height);
+        _nextItemFrame = CGRectMake(self.width * 2, 0, self.width, self.height);
+        _itemViews = [[NSMutableArray alloc] init];
         _scrollView = [[UIScrollView alloc] init];
         _scrollView.backgroundColor = [UIColor blackColor];
         _scrollView.delegate = self;
@@ -61,20 +66,86 @@
         _scrollView.showsVerticalScrollIndicator = NO;
         _scrollView.scrollsToTop = NO;
         [self addSubview:_scrollView];
-        
-        _itemViews = [NSMutableArray array];
-        _currentIndex = -1;
     }
     return self;
 }
 
-- (void)dealloc
+- (void)layoutSubviews
 {
-    if (_scrollView) {
-        _scrollView.delegate = nil;
+    [super layoutSubviews];
+    self.scrollView.frame = CGRectMake(0, 0, self.frame.size.width, self.frame.size.height);
+    if (self.itemViews.count > 1) {
+        self.scrollView.contentSize = CGSizeMake(self.width * 3, 0);
+    } else {
+        self.scrollView.contentSize = CGSizeZero;
     }
-    //[NSObject cancelPreviousPerformRequestsWithTarget:self];
+    [self resetItemViewsFrame];
 }
+
+#pragma mark --private methods--
+- (CGFloat)height {
+    return self.scrollView.frame.size.height;
+}
+
+- (CGFloat)width {
+    return self.scrollView.frame.size.width;
+}
+
+- (UIView *)getItemAtIndex:(NSInteger)index
+{
+    if (self.itemViews.count > index) {
+        return [self.itemViews objectAtIndex:index];
+    }else{
+        return nil;
+    }
+}
+
+- (void)setCurrentIndex:(NSInteger)currentIndex
+{
+    _currentIndex = currentIndex;
+    _nextIndex = (self.currentIndex + 1) % _itemViews.count;
+    [self getItemAtIndex:_currentIndex].frame = _currentItemFrame;
+    if (self.delegate && [self.delegate respondsToSelector:@selector(recycleSliderView:didScrollToItemAtIndex:)]) {
+        [self.delegate recycleSliderView:self didScrollToItemAtIndex:_currentIndex];
+    }
+}
+
+#pragma mark - 设置滚动方向
+- (void)setDirection:(Direction)direction {
+    //变换方向时设置一次各view frame
+    if (_direction == direction) return;
+    _direction = direction;
+    if (_direction == DirectionNone) return;
+    
+    if (_direction == DirectionRight) { // 如果是向右滚动
+        self.nextItemFrame = CGRectMake(0, 0, self.width, self.height);
+        self.nextIndex = self.currentIndex - 1;
+        if (self.nextIndex < 0)
+        {
+            self.nextIndex = _itemViews.count - 1;
+        }
+    }else if (_direction == DirectionLeft){ // 如果是向左边滚动
+        self.nextItemFrame = CGRectMake(self.width * 2, 0, self.width, self.height);
+        self.nextIndex = (self.currentIndex + 1) % _itemViews.count;
+    }
+    [self getItemAtIndex:_nextIndex].frame = _nextItemFrame;
+}
+
+- (void)resetItemViewsFrame
+{
+    for (int i = 0; i < self.itemViews.count; i++) {
+        UIView *view = [self.itemViews objectAtIndex:i];
+        if (i != self.currentIndex && i != self.nextIndex) {
+            view.frame = view.frame = CGRectMake(self.frame.size.width * 3, 0, self.width, self.height);;
+        }
+    }
+}
+
+- (void)nextPage {
+    [self.scrollView setContentOffset:CGPointMake(self.width * 2, 0) animated:YES];
+}
+
+#pragma mark Public Methods
 
 - (void)setIndicator:(WXIndicatorView *)indicator
 {
@@ -82,30 +153,6 @@
     [_indicator setPointCount:self.itemViews.count];
     [_indicator setCurrentPoint:_currentIndex];
 }
-
-- (void)setCurrentIndex:(NSInteger)currentIndex
-{
-    if (_currentIndex == currentIndex) return;
-    
-    _currentIndex = currentIndex;
-    [self.indicator setCurrentPoint:_currentIndex];
-    
-    [self _configSubViews];
-    
-    if (self.delegate && [self.delegate respondsToSelector:@selector(sliderView:didScrollToItemAtIndex:)]) {
-        [self.delegate sliderView:self didScrollToItemAtIndex:_currentIndex];
-    }
-}
-
-- (void)layoutSubviews
-{
-    [super layoutSubviews];
-    
-    self.scrollView.frame = CGRectMake(0, 0, self.frame.size.width, self.frame.size.height);
-    self.scrollView.contentSize = CGSizeMake(self.itemViews.count * self.frame.size.width, self.frame.size.height);
-}
-
-#pragma mark Public Methods
 
 - (void)insertItemView:(UIView *)view atIndex:(NSInteger)index
 {
@@ -125,8 +172,9 @@
             [self.scrollView insertSubview:view atIndex:index];
         }
     }
-    
+    [self setCurrentIndex:_currentIndex];
     [self.indicator setPointCount:self.itemViews.count];
+    [self.indicator setCurrentPoint:_currentIndex];
     [self setNeedsLayout];
 }
 
@@ -139,167 +187,21 @@
     if ([self.scrollView.subviews containsObject:view]) {
         [view removeFromSuperview];
     }
-    
+    [self setCurrentIndex:_currentIndex];
     [self.indicator setPointCount:self.itemViews.count];
+    [self.indicator setCurrentPoint:_currentIndex];
     [self setNeedsLayout];
-}
-
-- (void)scroll2ItemView:(NSInteger)index animated:(BOOL)animated
-{
-    UIView *itemView = nil;
-    for (itemView in self.itemViews) {
-        if (itemView.tag == index) {
-            break;
-        }
-    }
-    
-    if (itemView) {
-        [self.scrollView setContentOffset:itemView.frame.origin animated:YES];
-    }
-}
-
-- (void)layoutItemViews {
-    [self _resortItemViews];
-    [self _resetItemFrames];
-}
-
-- (void)loadData
-{
-    self.scrollView.frame = CGRectMake(0, 0, self.frame.size.width, self.frame.size.height);
-    self.scrollView.contentSize = CGSizeMake(self.itemViews.count * self.frame.size.width, self.frame.size.height);
-    
-    [self _configSubViews];
-}
-
-#pragma mark Private Methods
-
-- (void)_configSubViews {
-    [self layoutItemViews];
-    [self _scroll2Center];
-    [self _resetItemCountLessThanOrEqualToTwo];
-    [self setNeedsLayout];
-}
-
-- (void)_resortItemViews
-{
-    if (self.itemViews.count <= 2) return;
-    
-    NSInteger center = [self _centerItemIndex];
-    NSInteger index = 0;
-    
-    if (self.currentIndex >= 0) {
-        [self _validateCurrentIndex];
-        if (self.currentIndex > center) {
-            index = self.currentIndex - center;
-        } else {
-            index = self.currentIndex + self.itemViews.count - center;
-        }
-    }
-    else {
-        index = self.itemViews.count - center;
-    }
-    
-    __weak typeof(self) weakSelf = self;
-    [self.itemViews sortUsingComparator:^NSComparisonResult(UIView *obj1, UIView *obj2) {
-        NSInteger tag1 = obj1.tag >= index ? obj1.tag - index : obj1.tag + weakSelf.itemViews.count - index;
-        NSInteger tag2 = obj2.tag >= index ? obj2.tag - index : obj2.tag + weakSelf.itemViews.count - index;
-        
-        if (tag1 > tag2) {
-            return 1;
-        } else if (tag1 < tag2) {
-            return -1;
-        } else {
-            return 0;
-        }
-    }];
-}
-
-- (void)_resetItemFrames
-{
-    CGFloat xOffset = 0; CGRect frame = CGRectZero;
-    for(UIView *itemView in self.itemViews) {
-        frame = itemView.frame;
-        frame.origin.x = xOffset;
-        frame.size.width = self.frame.size.width;
-        itemView.frame = frame;
-        xOffset += frame.size.width;
-    }
-}
-
-- (NSInteger)_centerItemIndex
-{
-    if (self.itemViews.count > 2) {
-        return self.itemViews.count % 2 ? self.itemViews.count / 2 : self.itemViews.count / 2 - 1;
-    }
-    return 0;
-}
-
-- (void)_scroll2Center
-{
-    if (self.itemViews.count > 2) {
-        UIView *itemView = [self.itemViews objectAtIndex:[self _centerItemIndex]];
-        //[self.scrollView scrollRectToVisible:itemView.frame animated:NO];
-        [self.scrollView setContentOffset:CGPointMake(itemView.frame.origin.x, itemView.frame.origin.y) animated:NO];
-    }
-}
-
-- (void)_resetItemCountLessThanOrEqualToTwo {
-    if (self.itemViews.count > 0 && self.itemViews.count <= 2) {
-        [self _validateCurrentIndex];
-        for (UIView *itemView in self.itemViews) {
-            if (itemView.tag == _currentIndex) {
-                [self.scrollView scrollRectToVisible:itemView.frame animated:NO];
-                break;
-            }
-        }
-    }
-}
-
-- (BOOL)_validateCurrentIndex {
-    if (_currentIndex > 0 && _currentIndex < self.itemViews.count) {
-        return YES;
-    }
-    _currentIndex = 0;
-    return NO;
-}
-
-- (BOOL)_isItemViewVisiable:(UIView *)itemView
-{
-    CGRect itemFrame = itemView.frame;
-    
-    CGFloat vx = self.scrollView.contentInset.left + self.scrollView.contentOffset.x;
-    CGFloat vy = self.scrollView.contentInset.top + self.scrollView.contentOffset.y;
-    CGFloat vw = self.scrollView.frame.size.width - self.scrollView.contentInset.left - self.scrollView.contentInset.right;
-    CGFloat vh = self.scrollView.frame.size.height - self.scrollView.contentInset.top - self.scrollView.contentInset.bottom;
-    CGRect visiableRect = CGRectMake(vx - 2, vy, vw + 4, vh);
-    
-    CGRect intersection = CGRectIntersection(visiableRect, itemFrame);
-    if (intersection.size.width > visiableRect.size.width - 10) {
-        return YES;
-    } else {
-        return NO;
-    }
 }
 
 #pragma mark ScrollView Delegate
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView
 {
-    UIView *itemView = nil;
-    for (itemView in self.itemViews) {
-        if ([self _isItemViewVisiable:itemView]) {
-            break;
-        }
+    CGFloat offX = scrollView.contentOffset.x;
+    self.direction = offX > self.width ? DirectionLeft : offX < self.width ? DirectionRight : DirectionNone;
+    if (self.delegate && [self.delegate respondsToSelector:@selector(recycleSliderView:didScroll:)]) {
+        [self.delegate recycleSliderView:self didScroll:self.scrollView];
     }
-    if (itemView) {
-        self.currentIndex = itemView.tag;
-    }
-    if (self.delegate && [self.delegate respondsToSelector:@selector(sliderView:sliderViewDidScroll:)]) {
-        [self.delegate sliderView:self sliderViewDidScroll:self.scrollView];
-    }
-    //[NSObject cancelPreviousPerformRequestsWithTarget:self];
-    //ensure that the end of scroll is fired.
-    //[self performSelector:@selector(scrollViewDidEndScrollingAnimation:) withObject:nil afterDelay:0.3];
 }
 
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView
@@ -316,20 +218,12 @@
     }
 }
 
-// called when setContentOffset/scrollRectVisible:animated: finishes. called from the performselector in scrollViewDidScroll if not animating.
--(void)scrollViewDidEndScrollingAnimation:(UIScrollView *)scrollView
-{
-    if (self.delegate && [self.delegate respondsToSelector:@selector(sliderView:scrollViewDidStopScroll:)]) {
-        [self.delegate sliderView:self scrollViewDidStopScroll:scrollView];
-    }
-}
-
 
 @end
 
-@interface WXSliderComponent ()<WXSliderViewDelegate>
+@interface WXRecycleSliderComponent ()<WXRecycleSliderViewDelegate>
 
-@property (nonatomic, strong) WXSliderView *sliderView;
+@property (nonatomic, strong) WXRecycleSliderView *recycleSliderView;
 @property (nonatomic, strong) NSTimer *autoTimer;
 @property (nonatomic, assign) NSInteger currentIndex;
 @property (nonatomic, assign) BOOL  autoPlay;
@@ -347,7 +241,7 @@
 
 @end
 
-@implementation WXSliderComponent
+@implementation WXRecycleSliderComponent
 
 - (void) dealloc
 {
@@ -388,18 +282,18 @@
 
 - (UIView *)loadView
 {
-    return [[WXSliderView alloc] init];
+    return [[WXRecycleSliderView alloc] init];
 }
 
 - (void)viewDidLoad
 {
     [super viewDidLoad];
     
-    _sliderView = (WXSliderView *)self.view;
-    _sliderView.delegate = self;
-    _sliderView.scrollView.pagingEnabled = YES;
-    _sliderView.exclusiveTouch = YES;
-    _sliderView.scrollView.scrollEnabled = _scrollable;
+    _recycleSliderView = (WXRecycleSliderView *)self.view;
+    _recycleSliderView.delegate = self;
+    _recycleSliderView.scrollView.pagingEnabled = YES;
+    _recycleSliderView.exclusiveTouch = YES;
+    _recycleSliderView.scrollView.scrollEnabled = _scrollable;
     
     if (_autoPlay) {
         [self _startAutoPlayTimer];
@@ -410,7 +304,7 @@
 
 - (void)layoutDidFinish
 {
-    _sliderView.currentIndex = _index;
+    _recycleSliderView.currentIndex = _index;
 }
 
 - (void)viewDidUnload
@@ -440,16 +334,16 @@
             [self.childrenView insertObject:view atIndex:index];
         }
         
-        WXSliderView *sliderView = (WXSliderView *)self.view;
+        WXRecycleSliderView *recycleSliderView = (WXRecycleSliderView *)self.view;
         if ([view isKindOfClass:[WXIndicatorView class]]) {
-            [sliderView addSubview:view];
+            [recycleSliderView addSubview:view];
             return;
         }
         
         subcomponent.isViewFrameSyncWithCalculated = NO;
         
         if (index == -1) {
-            [sliderView insertItemView:view atIndex:index];
+            [recycleSliderView insertItemView:view atIndex:index];
         } else {
             NSInteger offset = 0;
             for (int i = 0; i < [self.childrenView count]; ++i) {
@@ -459,10 +353,9 @@
                     offset++;
                 }
             }
-            [sliderView insertItemView:view atIndex:index - offset];
+            [recycleSliderView insertItemView:view atIndex:index - offset];
         }
-        
-        [sliderView loadData];
+        [recycleSliderView layoutSubviews];
     }
 }
 
@@ -474,9 +367,9 @@
         [self.childrenView removeObject:view];
     }
     
-    WXSliderView *sliderView = (WXSliderView *)_view;
-    [sliderView removeItemView:view];
-    [sliderView setCurrentIndex:0];
+    WXRecycleSliderView *recycleSliderView = (WXRecycleSliderView *)_view;
+    [recycleSliderView removeItemView:view];
+    [recycleSliderView setCurrentIndex:0];
 }
 
 - (void)updateAttributes:(NSDictionary *)attributes
@@ -504,13 +397,12 @@
         _index = [attributes[@"index"] integerValue];
         
         self.currentIndex = _index;
-        self.sliderView.currentIndex = _index;
-        [self.sliderView layoutItemViews];
+        self.recycleSliderView.currentIndex = _index;
     }
     
     if (attributes[@"scrollable"]) {
         _scrollable = attributes[@"scrollable"] ? [WXConvert BOOL:attributes[@"scrollable"]] : YES;
-        ((WXSliderView *)self.view).scrollView.scrollEnabled = _scrollable;
+        ((WXRecycleSliderView *)self.view).scrollView.scrollEnabled = _scrollable;
     }
     
     if (attributes[@"offsetXAccuracy"]) {
@@ -554,8 +446,8 @@
 
 -(void)setIndicatorView:(WXIndicatorView *)indicatorView
 {
-    NSAssert(_sliderView, @"");
-    [_sliderView setIndicator:indicatorView];
+    NSAssert(_recycleSliderView, @"");
+    [_recycleSliderView setIndicator:indicatorView];
 }
 
 #pragma mark Private Methods
@@ -581,27 +473,12 @@
 
 - (void)_autoPlayOnTimer
 {
-    WXSliderView *sliderView = (WXSliderView *)self.view;
-
-    int indicatorCnt = 0;
-    for (int i = 0; i < [self.childrenView count]; ++i) {
-        if ([self.childrenView[i] isKindOfClass:[WXIndicatorView class]]) {
-            indicatorCnt++;
-        }
-    }
-    
-    self.currentIndex ++;
-    if (self.currentIndex < self.childrenView.count - indicatorCnt) {
-        [sliderView scroll2ItemView:self.currentIndex animated:YES];
-    } else {
-        self.currentIndex = 0;
-        [sliderView scroll2ItemView:self.currentIndex animated:YES];
-    }
+    [self.recycleSliderView nextPage];
 }
 
 #pragma mark ScrollView Delegate
 
-- (void)sliderView:(WXSliderView *)sliderView sliderViewDidScroll:(UIScrollView *)scrollView
+- (void)recycleSliderView:(WXRecycleSliderView *)recycleSliderView didScroll:(UIScrollView *)scrollView
 {
     if (_sliderScrollEvent) {
         CGFloat width = scrollView.frame.size.width;
@@ -612,33 +489,14 @@
             [self fireEvent:@"scroll" params:@{@"offsetXRatio":[NSNumber numberWithFloat:offsetXRatio]} domChanges:nil];
         }
     }
-    if (!_sliderStartEventFired) {
-        [self sliderView:sliderView scrollViewDidStartScroll:scrollView];
-    }
 }
 
-- (void)sliderView:(WXSliderView *)sliderView didScrollToItemAtIndex:(NSInteger)index
+- (void)recycleSliderView:(WXRecycleSliderView *)recycleSliderView didScrollToItemAtIndex:(NSInteger)index
 {
     self.currentIndex = index;
     if (_sliderChangeEvent) {
         [self fireEvent:@"change" params:@{@"index":@(index)} domChanges:@{@"attrs": @{@"index": @(index)}}];
     }
-}
-
-- (void)sliderView:(WXSliderView *)sliderView scrollViewDidStartScroll:(UIScrollView *)scrollView
-{
-    if (_sliderScrollStartEvent) {
-        [self fireEvent:@"scrollstart" params:nil domChanges:nil];
-    }
-    _sliderStartEventFired = YES;
-}
-
-- (void)sliderView:(WXSliderView *)sliderView scrollViewDidStopScroll:(UIScrollView *)scrollView
-{
-    if (_sliderScrollEndEvent) {
-        [self fireEvent:@"scrollend" params:nil domChanges:nil];
-    }
-    _sliderStartEventFired = NO;
 }
 
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView

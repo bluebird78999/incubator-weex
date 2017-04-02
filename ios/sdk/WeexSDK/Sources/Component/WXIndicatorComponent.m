@@ -7,7 +7,7 @@
  */
 
 #import "WXIndicatorComponent.h"
-#import "WXSliderComponent.h"
+#import "WXRecycleSliderComponent.h"
 #import "WXConvert.h"
 #import "WXSliderNeighborComponent.h"
 #import "WXSDKInstance.h"
@@ -159,8 +159,8 @@
     _indicatorView.pointSize = _itemSize;
     
     WXComponent *parent = self.supercomponent;
-    if([parent isKindOfClass:[WXSliderComponent class]] || [parent isKindOfClass:[WXSliderNeighborComponent class]]) {
-        WXSliderComponent *parentSlider = (WXSliderComponent *)parent;
+    if([parent isKindOfClass:[WXRecycleSliderComponent class]] || [parent isKindOfClass:[WXSliderNeighborComponent class]]) {
+        WXRecycleSliderComponent *parentSlider = (WXRecycleSliderComponent *)parent;
         [parentSlider setIndicatorView:_indicatorView];
     }
     else {
