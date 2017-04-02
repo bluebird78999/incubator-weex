@@ -1,6 +1,6 @@
 <template>
   <div flex-direction="row" style="flex:1;">
-    <slider class="slider" interval="3000" auto-play="true" offset-x-accuracy="0.1" @scroll="scrollHandler" @change="changeHandler">
+    <slider class="slider" interval="3000" auto-play="false" offset-x-accuracy="0.1" @scroll="scrollHandler" @change="changeHandler">
       <div class="slider-pages" v-for="item in itemList">
         <image class="img" :src="item.pictureUrl"></image>
         <text class="title">{{item.title}}</text>

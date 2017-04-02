@@ -56,11 +56,9 @@ typedef NS_ENUM(NSInteger, Direction) {
     self = [super initWithFrame:frame];
     if (self) {
         _currentIndex = 0;
-        _currentItemFrame = CGRectMake(self.width, 0, self.width, self.height);
-        _nextItemFrame = CGRectMake(self.width * 2, 0, self.width, self.height);
         _itemViews = [[NSMutableArray alloc] init];
         _scrollView = [[UIScrollView alloc] init];
-        _scrollView.backgroundColor = [UIColor blackColor];
+        _scrollView.backgroundColor = [UIColor clearColor];
         _scrollView.delegate = self;
         _scrollView.showsHorizontalScrollIndicator = NO;
         _scrollView.showsVerticalScrollIndicator = NO;
@@ -79,6 +77,9 @@ typedef NS_ENUM(NSInteger, Direction) {
     } else {
         self.scrollView.contentSize = CGSizeZero;
     }
+    self.scrollView.contentOffset = CGPointMake(self.width, 0);
+    _currentItemFrame = CGRectMake(self.width, 0, self.width, self.height);
+    _nextItemFrame = CGRectMake(self.width * 2, 0, self.width, self.height);
     [self resetItemViewsFrame];
 }
 
@@ -108,6 +109,8 @@ typedef NS_ENUM(NSInteger, Direction) {
     if (self.delegate && [self.delegate respondsToSelector:@selector(recycleSliderView:didScrollToItemAtIndex:)]) {
         [self.delegate recycleSliderView:self didScrollToItemAtIndex:_currentIndex];
     }
+    [self.indicator setPointCount:self.itemViews.count];
+    [self.indicator setCurrentPoint:currentIndex];
 }
 
 #pragma mark - 设置滚动方向
@@ -136,9 +139,11 @@ typedef NS_ENUM(NSInteger, Direction) {
     for (int i = 0; i < self.itemViews.count; i++) {
         UIView *view = [self.itemViews objectAtIndex:i];
         if (i != self.currentIndex && i != self.nextIndex) {
-            view.frame = view.frame = CGRectMake(self.frame.size.width * 3, 0, self.width, self.height);;
+            view.frame = CGRectMake(self.frame.size.width * 3, 0, self.width, self.height);;
         }
     }
+    [self getItemAtIndex:_currentIndex].frame = _currentItemFrame;
+    [self getItemAtIndex:_nextIndex].frame = _nextItemFrame;
 }
 
 - (void)nextPage {
@@ -173,9 +178,7 @@ typedef NS_ENUM(NSInteger, Direction) {
         }
     }
     [self setCurrentIndex:_currentIndex];
-    [self.indicator setPointCount:self.itemViews.count];
-    [self.indicator setCurrentPoint:_currentIndex];
-    [self setNeedsLayout];
+    [self layoutSubviews];
 }
 
 - (void)removeItemView:(UIView *)view
@@ -188,9 +191,7 @@ typedef NS_ENUM(NSInteger, Direction) {
         [view removeFromSuperview];
     }
     [self setCurrentIndex:_currentIndex];
-    [self.indicator setPointCount:self.itemViews.count];
-    [self.indicator setCurrentPoint:_currentIndex];
-    [self setNeedsLayout];
+    [self layoutSubviews];
 }
 
 #pragma mark ScrollView Delegate
@@ -218,6 +219,22 @@ typedef NS_ENUM(NSInteger, Direction) {
     }
 }
 
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
+    [self resetScrollView];
+}
+
+- (void)scrollViewDidEndScrollingAnimation:(UIScrollView *)scrollView {
+    [self resetScrollView];
+}
+
+- (void)resetScrollView {
+    // 等于1表示没有滚动
+    if (self.scrollView.contentOffset.x / self.width == 1) return;
+    self.currentIndex = self.nextIndex;
+    [self getItemAtIndex:self.nextIndex].frame = CGRectMake(self.width, 0, self.width, self.height);
+    [self resetItemViewsFrame];
+    self.scrollView.contentOffset = CGPointMake(self.width, 0);
+}
 
 @end
 
@@ -395,7 +412,6 @@ typedef NS_ENUM(NSInteger, Direction) {
     
     if (attributes[@"index"]) {
         _index = [attributes[@"index"] integerValue];
-        
         self.currentIndex = _index;
         self.recycleSliderView.currentIndex = _index;
     }
@@ -418,12 +434,6 @@ typedef NS_ENUM(NSInteger, Direction) {
     if ([eventName isEqualToString:@"scroll"]) {
         _sliderScrollEvent = YES;
     }
-    if ([eventName isEqualToString:@"scrollstart"]) {
-        _sliderScrollStartEvent = YES;
-    }
-    if ([eventName isEqualToString:@"scrollend"]) {
-        _sliderScrollEndEvent = YES;
-    }
 }
 
 - (void)removeEvent:(NSString *)eventName
@@ -433,12 +443,6 @@ typedef NS_ENUM(NSInteger, Direction) {
     }
     if ([eventName isEqualToString:@"scroll"]) {
         _sliderScrollEvent = NO;
-    }
-    if ([eventName isEqualToString:@"scrollstart"]) {
-        _sliderScrollStartEvent = NO;
-    }
-    if ([eventName isEqualToString:@"scrollend"]) {
-        _sliderScrollEndEvent = NO;
     }
 }
 
