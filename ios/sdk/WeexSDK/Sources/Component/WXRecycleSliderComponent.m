@@ -104,13 +104,23 @@ typedef NS_ENUM(NSInteger, Direction) {
 - (void)setCurrentIndex:(NSInteger)currentIndex
 {
     _currentIndex = currentIndex;
-    _nextIndex = (self.currentIndex + 1) % _itemViews.count;
-    [self getItemAtIndex:_currentIndex].frame = _currentItemFrame;
+    if (_direction == DirectionRight) { // 如果是向右滚动
+        self.nextItemFrame = CGRectMake(0, 0, self.width, self.height);
+        self.nextIndex = self.currentIndex - 1;
+        if (self.nextIndex < 0)
+        {
+            self.nextIndex = _itemViews.count - 1;
+        }
+    }else if (_direction == DirectionLeft){ // 如果是向左边滚动
+        self.nextItemFrame = CGRectMake(self.width * 2, 0, self.width, self.height);
+        self.nextIndex = (self.currentIndex + 1) % _itemViews.count;
+    }
+    [self resetItemViewsFrame];
+    [self.indicator setPointCount:self.itemViews.count];
+    [self.indicator setCurrentPoint:currentIndex];
     if (self.delegate && [self.delegate respondsToSelector:@selector(recycleSliderView:didScrollToItemAtIndex:)]) {
         [self.delegate recycleSliderView:self didScrollToItemAtIndex:_currentIndex];
     }
-    [self.indicator setPointCount:self.itemViews.count];
-    [self.indicator setCurrentPoint:currentIndex];
 }
 
 #pragma mark - 设置滚动方向
@@ -148,6 +158,15 @@ typedef NS_ENUM(NSInteger, Direction) {
 
 - (void)nextPage {
     [self.scrollView setContentOffset:CGPointMake(self.width * 2, 0) animated:YES];
+}
+
+- (void)resetScrollView {
+    if (self.scrollView.contentOffset.x / self.width == 1)
+    {
+        return;
+    }
+    [self setCurrentIndex:self.nextIndex];
+    self.scrollView.contentOffset = CGPointMake(self.width, 0);
 }
 
 #pragma mark Public Methods
@@ -225,15 +244,6 @@ typedef NS_ENUM(NSInteger, Direction) {
 
 - (void)scrollViewDidEndScrollingAnimation:(UIScrollView *)scrollView {
     [self resetScrollView];
-}
-
-- (void)resetScrollView {
-    // 等于1表示没有滚动
-    if (self.scrollView.contentOffset.x / self.width == 1) return;
-    self.currentIndex = self.nextIndex;
-    [self getItemAtIndex:self.nextIndex].frame = CGRectMake(self.width, 0, self.width, self.height);
-    [self resetItemViewsFrame];
-    self.scrollView.contentOffset = CGPointMake(self.width, 0);
 }
 
 @end
